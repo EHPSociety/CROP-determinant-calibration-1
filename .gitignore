@@ -2,6 +2,10 @@
 .Rhistory
 .Rapp.history
 
+### Kinda speaks for itself
+private
+*_PRIVATE_*.*
+
 # Session Data files
 .RData
 

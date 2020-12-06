@@ -1,0 +1,69 @@
+---
+title: "CROP overarch"
+author: "CROP authors"
+date: "`r format(Sys.time(), '%H:%M:%S on %Y-%m-%d %Z (UTC%z)')`"
+output:
+  html_document:
+    toc: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE);
+scriptPath <- here::here("scripts");
+```
+
+
+```{r prepare-limesurvey-connection}
+
+### Load LimeSurvey credentials from a file that isn't synched to Git
+source(
+  file.path(
+    scriptPath,
+    "CROP-determinant-calibration-1_PRIVATE_.R"
+  )
+);
+
+### Set the LimeSurvey credentials in the options
+options(lime_api      = ls3_api_url);
+options(lime_username = ls3_user_user);
+options(lime_password = ls3_user_pass);
+
+### Create a LimeSurvey session key
+
+body.json = list(
+  method = "get_session_key",
+  id = " ",
+  params = list(admin = ls3_user_user, password = ls3_user_pass)
+)
+r <- httr::POST(
+  ls3_api_url,
+  httr::content_type_json(),
+  body = jsonlite::toJSON(body.json, auto_unbox = TRUE)
+)
+session_key <- as.character(
+  jsonlite::fromJSON(
+    httr::content(r,
+                  encoding = "utf-8"))$result
+  );
+session_cache$session_key <- session_key
+session_key
+
+ls3_session_key <- limer::get_session_key();
+
+### Get a list of all survey IDs we have access to
+list_surveys <-
+  limer::call_limer(method = "list_surveys");
+sids <-
+  as.character(
+    sort(
+      as.numeric(
+        unique(
+          list_surveys$sid
+        )
+      )
+    )
+  );
+
+```
