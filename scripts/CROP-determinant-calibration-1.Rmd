@@ -10,12 +10,52 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
+
+
+###-----------------------------------------------------------------------------
+### Packages
+###-----------------------------------------------------------------------------
+
+if (!(installed.packages()['ufs', 'Version'] >= "0.4")) {
+  stop("You need to have at least version 0.4 of the `ufs` package installed; ",
+       "install it with:\n\ninstall.packages('ufs');");
+}
+
+ufs::checkPkgs(
+  'here',         ### Using paths relative to the project root
+  'knitr',        ### Knitting documents and controlling the knitting
+  'kableExtra',   ### Pretty tables
+  'poorman',      ### For bind.rows()
+  'patchwork'     ### For combining plots
+);
+
+###-----------------------------------------------------------------------------
+### Settings
+###-----------------------------------------------------------------------------
+
+knitr::opts_chunk$set(cache=FALSE);
+knitr::opts_chunk$set(comment=NA);
 knitr::opts_chunk$set(echo = TRUE);
+
+ufs::opts$set(debug = FALSE);
+
+###-----------------------------------------------------------------------------
+### Set the variables with the paths and filenames
+###-----------------------------------------------------------------------------
+
+dataPath <- here::here('results-data-raw');
+processedDataPath <- here::here('results-data-processed');
+outputPath <- here::here('results-output');
 scriptPath <- here::here("scripts");
+
 ```
 
+```{r read-data-through-limesurvey-api, eval=FALSE}
 
-```{r prepare-limesurvey-connection}
+###-----------------------------------------------------------------------------
+### This section should import the data directly from LimeSurvey. However,
+### the server sends an odd response.
+###-----------------------------------------------------------------------------
 
 ### Load LimeSurvey credentials from a file that isn't synched to Git
 source(
@@ -31,26 +71,26 @@ options(lime_username = ls3_user_user);
 options(lime_password = ls3_user_pass);
 
 ### Create a LimeSurvey session key
+#ls3_session_key <- limer::get_session_key();
 
-body.json = list(
-  method = "get_session_key",
-  id = " ",
-  params = list(admin = ls3_user_user, password = ls3_user_pass)
-)
-r <- httr::POST(
-  ls3_api_url,
-  httr::content_type_json(),
-  body = jsonlite::toJSON(body.json, auto_unbox = TRUE)
-)
-session_key <- as.character(
-  jsonlite::fromJSON(
-    httr::content(r,
-                  encoding = "utf-8"))$result
-  );
-session_cache$session_key <- session_key
-session_key
-
-ls3_session_key <- limer::get_session_key();
+### Contents of that function
+  body.json = list(
+    method = "get_session_key",
+    id = " ",
+    params = list(admin = ls3_user_user, password = ls3_user_pass)
+  )
+  r <- httr::POST(
+    ls3_api_url,
+    httr::content_type_json(),
+    body = jsonlite::toJSON(body.json, auto_unbox = TRUE)
+  )
+  session_key <- as.character(
+    jsonlite::fromJSON(
+      httr::content(r,
+                    encoding = "utf-8"))$result
+    );
+  session_cache$session_key <- session_key
+  session_key
 
 ### Get a list of all survey IDs we have access to
 list_surveys <-
@@ -67,3 +107,52 @@ sids <-
   );
 
 ```
+
+```{r read-data-from-disk}
+
+###-----------------------------------------------------------------------------
+### Read all data files stored in `dataPath`
+###-----------------------------------------------------------------------------
+
+### Survey files
+dataFiles <-
+  list.files(dataPath, pattern="\\.csv")
+
+### Get survey identifiers
+surveyIds <-
+  gsub(
+    ".*---(..)---survey_(\\d{6})_R_.*",
+    "\\2",
+    dataFiles
+  );
+
+### Get languages
+surveyLanguages <-
+  gsub(
+    ".*---(..)---survey_(\\d{6})_R_.*",
+    "\\1",
+    dataFiles
+  );
+
+dataList <-
+  lapply(
+    surveyIds,
+    limonaid::ls_import_data,
+    path = dataPath
+  );
+names(dataList) <- surveyLanguages;
+
+dataList <-
+  do.call(
+    poorman::bind_rows,
+    lapply(
+      surveyLanguages,
+      function(lang) {
+        dataList[[lang]]$country <- lang;
+        return(dataList[[lang]]);
+      }
+    )
+  );
+
+```
+
