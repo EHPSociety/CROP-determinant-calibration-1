@@ -108,7 +108,8 @@ sids <-
 
 ```
 
-```{r read-data-from-disk}
+```{r read-data-from-disk, warnings=FALSE}
+### (hiding "incomplete final line" warnings)
 
 ###-----------------------------------------------------------------------------
 ### Read all data files stored in `dataPath`
@@ -126,8 +127,8 @@ surveyIds <-
     dataFiles
   );
 
-### Get languages
-surveyLanguages <-
+### Get countries
+surveyCountries <-
   gsub(
     ".*---(..)---survey_(\\d{6})_R_.*",
     "\\1",
@@ -140,19 +141,38 @@ dataList <-
     limonaid::ls_import_data,
     path = dataPath
   );
-names(dataList) <- surveyLanguages;
+names(dataList) <- surveyCountries;
 
-dataList <-
+dat <-
   do.call(
     poorman::bind_rows,
     lapply(
-      surveyLanguages,
-      function(lang) {
-        dataList[[lang]]$country <- lang;
-        return(dataList[[lang]]);
+      surveyCountries,
+      function(country) {
+        dataList[[country]]$country <- country;
+        return(dataList[[country]]);
       }
     )
   );
 
 ```
 
+```{r}
+
+CIBERlite_plots <- list();
+for (currentCountry in surveyCountries) {
+  
+  CIBERlite_plots[[currentCountry]] <-
+    behaviorchange::CIBERlite(
+      data = dat[dat$country == currentCountry, ],
+      determinants = c(
+        'exerciseRAA_AttIg',
+        'exerciseRAA_pnIva',
+        'exerciseRAA_pbcAc'
+      ),
+      targets = 'exerciseRAA_inInt'
+    );
+  
+}
+
+```
