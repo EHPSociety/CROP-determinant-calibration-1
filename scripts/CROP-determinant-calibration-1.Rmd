@@ -1,10 +1,11 @@
 ---
-title: "CROP overarch"
-author: "CROP authors"
+title: "Collaborative Research in an Open Platform: Determinant Calibration 1"
+author: "THE CROP authors et al."
 date: "`r format(Sys.time(), '%H:%M:%S on %Y-%m-%d %Z (UTC%z)')`"
 output:
   html_document:
     toc: true
+    code_folding: hide
 editor_options: 
   chunk_output_type: console
 ---
@@ -48,7 +49,62 @@ processedDataPath <- here::here('results-data-processed');
 outputPath <- here::here('results-output');
 scriptPath <- here::here("scripts");
 
+###-----------------------------------------------------------------------------
+### Set convenience vectors
+###-----------------------------------------------------------------------------
+
+behaviors <- c("exerciseRAA", "smokingRAA");
+behaviorRegexed <- c("exerciseBehavior", "smokingBehavior");
+
+determinantLabels <-
+  c("Attitude", "Perceived\nNorms", "Perceived\nBehavioral\nControl");
+
+countryLabels <-
+  c(de = "Germany",
+    fr = "France",
+    hr = "Croatia",
+    ie = "Ireland",
+    it = "Italy",
+    nl = "The Netherlands");
+
 ```
+
+# Determinant structure specification
+
+This command builds the determinant structures that we will analyse. This uses in-progress code from the `behaviorchange` package that leverages the `data.tree` package to build a hierarchy of determinants and sub-determinants.
+
+```{r}
+
+determinantStructures <-
+  lapply(
+    behaviors,
+    function(behav) {
+      return(
+        behaviorchange::determinantStructure(
+          behav,
+          list(behaviorRegEx = behav),
+          behaviorchange::determinantVar(
+            "intention",
+            "_in",
+            behaviorchange::determinantVar(
+              "attitude",
+              "_Att"),
+            behaviorchange::determinantVar(
+              "perceivedNorm",
+              "_pn"),
+            behaviorchange::determinantVar(
+              "perceivedBehavioralControl",
+              "_pbc"
+            )
+          )
+        )
+      );
+    }
+  );
+
+```
+
+# Read data
 
 ```{r read-data-through-limesurvey-api, eval=FALSE}
 
@@ -108,7 +164,7 @@ sids <-
 
 ```
 
-```{r read-data-from-disk, warnings=FALSE}
+```{r read-data-from-disk, warning=FALSE}
 ### (hiding "incomplete final line" warnings)
 
 ###-----------------------------------------------------------------------------
@@ -157,22 +213,142 @@ dat <-
 
 ```
 
+## Questions {.tabset .tabset-pills}
+
+Unfortunately, the R export plugin for LimeSurvey always exports the labels in the primary language. Therefore, only the English-language question texts (specifically, those for Ireland) are shown here.
+
+<!-- ### Overview -->
+
+<!-- These tabs show the question texts in each country. -->
+
+```{r question-labels, results='asis'}
+
+currentCountry <- "ie";
+
+# for (currentCountry in surveyCountries) {
+#   ufs::heading(countryLabels[currentCountry]);
+  questionDf <-
+    data.frame(
+      variable = names(dataList[[currentCountry]]),
+      question = c(
+        attributes(dataList[[currentCountry]])$label,
+        rep(
+          "",
+          ncol(dataList[[currentCountry]]) -
+            length(attributes(dataList[[currentCountry]])$label)
+        )
+      )
+    );
+  questionDf$question <-
+  ifelse(grepl("^\\[.+\\].*", questionDf$question),
+         gsub("^\\[(.+)\\].*", "\\1", questionDf$question),
+         questionDf$question);
+               
+  print(
+    kableExtra::kable_styling(
+      knitr::kable(
+        questionDf,
+        row.names = FALSE
+      )
+    )
+  );
+# }
+
+```
+
+
+## Data preprocessing
+
+```{r determinant-structure-preprocessing, results="asis"}
+
+### Add variables names of the determinants' measures and compute
+### means where necessary
+for (i in seq_along(determinantStructures)) {
+  behaviorchange::detStructAddVarNames(
+    determinantStructures[[i]],
+    names(dat)
+  );
+  dat <- behaviorchange::detStructComputeScales(
+    determinantStructures[[i]],
+    dat
+  );
+}
+
+### Create convenience vectors with the variable names per behavior
+scaleVars<- list();
+intentionVars <- list();
+determinantVars <- list();
+for (i in seq_along(behaviors)) {
+  scaleVars[[behaviors[i]]] <-
+    unname(determinantStructures[[i]]$Get('scaleVarName'));
+  scaleVars[[behaviors[i]]] <-
+    scaleVars[[behaviors[i]]][!is.na(scaleVars[[behaviors[i]]])];
+
+  ### Create separate variables for intention and the other determinants
+  intentionVars[[behaviors[i]]] <-
+    grep("intention", scaleVars[[behaviors[i]]], value=TRUE);
+  determinantVars[[behaviors[i]]] <-
+    setdiff(scaleVars[[behaviors[i]]], intentionVars[[behaviors[i]]]);
+}
+
+```
+
+# Analyses
+
 ```{r}
 
 CIBERlite_plots <- list();
-for (currentCountry in surveyCountries) {
-  
-  CIBERlite_plots[[currentCountry]] <-
-    behaviorchange::CIBERlite(
-      data = dat[dat$country == currentCountry, ],
-      determinants = c(
-        'exerciseRAA_AttIg',
-        'exerciseRAA_pnIva',
-        'exerciseRAA_pbcAc'
-      ),
-      targets = 'exerciseRAA_inInt'
-    );
-  
+
+for (i in seq_along(behaviors)) {
+  CIBERlite_plots[[behaviors[i]]] <- list();
+  for (currentCountry in surveyCountries) {
+    CIBERlite_plots[[behaviors[i]]][[currentCountry]] <-
+      behaviorchange::CIBERlite(
+        data = dat[dat$country == currentCountry, ],
+        determinants = determinantVars[[behaviors[i]]],
+        targets = intentionVars[[behaviors[i]]],
+        determinantLabels = determinantLabels,
+        title = countryLabels[currentCountry]
+      );
+  }
 }
+
+wrappedPlots <-
+  lapply(
+    CIBERlite_plots,
+    patchwork::wrap_plots,
+    ncol=3
+  );
+
+wrappedPlots$exerciseRAA <-
+  wrappedPlots$exerciseRAA +
+    patchwork::plot_annotation(
+      title = "CIBERlite plots for exercise",
+      subtitle = "Bars are rescaled sample means, diamonds 95% confidence intervals for correlations"
+    );
+
+wrappedPlots$smokingRAA <-
+  wrappedPlots$smokingRAA +
+    patchwork::plot_annotation(
+      title = "CIBERlite plots for smoking",
+      subtitle = "Bars are rescaled sample means, diamonds 95% confidence intervals for correlations"
+    );
+
+ufs::knitAndSave(
+  wrappedPlots$exerciseRAA,
+  figCaption = "CIBERlite plots for exercise",
+  figWidth = 9,
+  figHeight = 6,
+  path = outputPath
+);
+
+ufs::knitAndSave(
+  wrappedPlots$smokingRAA,
+  figCaption = "CIBERlite plots for smoking",
+  figWidth = 9,
+  figHeight = 6,
+  path = outputPath
+);
+
 
 ```

@@ -1,0 +1,15 @@
+image: debian:buster-slim
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+pages:
+  script:
+  - mkdir public
+  - cp scripts/CROP-determinant-calibration-1.html public/index.html
+  - ls public
+  artifacts:
+    paths:
+    - public
+  only:
+  - master
